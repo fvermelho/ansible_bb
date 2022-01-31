@@ -1,0 +1,9 @@
+[GPFS]
+lpa0gpfs001
+lpa0gpfs002
+
+
+[GPFS:vars]
+#ansible_connection=ssh
+#ansible_user=root
+#ansible_ssh_pass=abc1234
