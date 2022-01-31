@@ -1,0 +1,7 @@
+---
+# Sanity check of configuration variables
+# Make default variables available in hostvars
+- name: check | Set default daemon nodename
+  set_fact:
+    scale_daemon_nodename: "{{ scale_daemon_nodename }}"
+  when: hostvars[inventory_hostname].scale_daemon_nodename is undefined

@@ -1,0 +1,3 @@
+---
+- name: BRIDGE | create host_var file for ANSIBLE Spectrum Scale Role
+  local_action: template src=bridge.j2 dest=host_vars/bridge1

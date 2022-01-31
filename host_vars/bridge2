@@ -1,0 +1,36 @@
+---
+scale_storage:
+  - filesystem: db2fs
+    blockSize: 4M
+    automaticMountOption: True
+    defaultMountPoint: /DB2 
+    tieBreaker: FVlin2
+    nsdPrefix: db2nsd 
+    disk_counter: 0
+    disks:
+# DISK
+      - pvid: 00cae917a1af9b94 
+        pvc_disk_name: lunA-db2fs-1
+        disk_wwnid: 60050768028303C69000000000000A29
+# DISK
+      - pvid: 00cae917a1af9c23 
+        pvc_disk_name: lunA-db2fs-2
+        disk_wwnid: 60050768028303C69000000000000A2A
+# DISK
+      - pvid: 00cae917a1af9c93 
+        pvc_disk_name: lunA-db2fs-3
+        disk_wwnid: 60050768028303C69000000000000A2B
+# DISK
+      - pvid: 00cae917a1af9d03 
+        pvc_disk_name: lunB-db2fs-1
+        disk_wwnid: 60050768028303C69000000000000A2C
+# DISK
+      - pvid: 00cae917a1af9d78 
+        pvc_disk_name: lunB-db2fs-2
+        disk_wwnid: 60050768028303C69000000000000A2D
+# DISK
+      - pvid: 00cae917a1af9de2 
+        pvc_disk_name: lunB-db2fs-3
+        disk_wwnid: 60050768028303C69000000000000A2E
+
+

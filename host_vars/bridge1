@@ -1,0 +1,14 @@
+---
+scale_storage:
+  - filesystem: db2fs
+    blockSize: 4M
+    automaticMountOption: True
+    defaultMountPoint: /DB2 
+    tieBreaker: FVlin2
+    nsdPrefix: db2nsd 
+    disk_counter: 0
+
+powervc_vm_disk_info: [{'disk_wwn': ['60050768028303C69000000000000A29'], 'disk_pvc_name': ['lunA-db2fs-1']}, {'disk_wwn': ['60050768028303C69000000000000A2A'], 'disk_pvc_name': ['lunA-db2fs-2']}, {'disk_wwn': ['60050768028303C69000000000000A2B'], 'disk_pvc_name': ['lunA-db2fs-3']}, {'disk_wwn': ['60050768028303C69000000000000A2C'], 'disk_pvc_name': ['lunB-db2fs-1']}, {'disk_wwn': ['60050768028303C69000000000000A2D'], 'disk_pvc_name': ['lunB-db2fs-2']}, {'disk_wwn': ['60050768028303C69000000000000A2E'], 'disk_pvc_name': ['lunB-db2fs-3']}]
+aixNodes: [{'vm': 'FVaix1'}, {'vm': 'FVaix2'}, {'vm': 'FVaix3'}]
+
+

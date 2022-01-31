@@ -1,0 +1,36 @@
+---
+#
+# CHANGE TUNE PARAMETERS FOR HDISK
+#
+
+- name: storage | Define filesystem name
+  set_fact:
+    scale_storage_fsname:
+      "{{ item.filesystem }}"
+  with_items:
+    - "{{ scale_storage }}"
+  no_log: True
+
+- name: storage | Consolidate defined NSDs
+  set_fact:
+    scale_storage_nsdservers:
+      "{{ scale_storage_nsdservers | default([]) + [ item.1.servers | default(scale_daemon_nodename) ] }}"
+    scale_storage_pvid:
+      "{{ scale_storage_pvid | default([]) + [ item.1.pvid | default(scale_daemon_nodename) ] }}"
+    scale_storage_aix:
+      "{{ scale_storage_aix | default([]) + [ item.1 ] }}"
+  when:
+    - item.1.device is defined
+  with_subelements:
+    - "{{ scale_storage }}"
+    - disks
+  no_log: True
+
+#CHANGE DISK PARAMETERS #OLHAR
+- name: diskparm | change disk(s) parameter on AIX server(s)
+  shell: /opt/gpfs/sshgpfs {{ item[0] }} "if [ \$(uname) == AIX ];then chdev -l \$(lspv | grep {{ item[1].pvid }} | awk '{print \$1}') -a algorithm=shortest_queue -a reserve_policy=no_reserve -a timeout_policy=fail_path -a queue_depth=32 -a pv=yes -a rw_timeout=30 -a hcheck_interval=60 -a max_transfer=0x1000000 -a max_coalesce=0x1000000;fi"
+  with_nested:
+    - "{{ cluster_servers.stdout_lines }}"
+    - "{{ scale_storage_aix }}"
+  ignore_errors: yes
+  no_log: True

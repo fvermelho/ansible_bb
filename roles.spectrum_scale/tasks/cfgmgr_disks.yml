@@ -1,0 +1,49 @@
+---
+- name: AIX_disk_task | Get Spectrum Scale SSH registered programs
+  shell: "/usr/lpp/mmfs/bin/mmlscluster -Y | grep ssh|cut -d':' -f10"
+  register: ssh_SS
+
+- name: AIX_disk_task | Connect on the AIX LPARs and runs cfgmgr
+  shell: cd .;id; {{ ssh_SS.stdout_lines.0 }} {{ item.vm }} "sudo cfgmgr"
+  with_items:
+    - "{{ aixNodes }}"
+
+- name: AIX_disk_task | Connect on the AIX LPARs and set PVID to new disks
+  shell: cd .; {{ ssh_SS.stdout_lines.0 }} {{ item[0].vm }} "lspv -u | grep {{ item[1].disk_wwn }}| awk '{print \"sudo chdev -a pv=yes -l \" \$1}'|sh"
+  with_nested:
+    - "{{ aixNodes }}"
+    - "{{ powervc_vm_disk_info }}"
+
+- name: AIX_disk_task | Get hdisk name for each AIX LPAR
+  shell: cd .; {{ ssh_SS.stdout_lines.0 }} {{ item.vm }} "if [ \$(uname) == AIX ];then lspv -u;fi"
+  with_items:
+    - "{{ aixNodes }}"
+  register: lspv_output
+
+- name: AIX_disk_task | Set hdisk_info variable
+  set_fact:
+    powervc_vm_hdisk:
+      vm_name:
+        "{{ item[0].vm }}"
+      pvc_disk_name:
+        "{{ item[1].disk_pvc_name[0] }}"
+      hdisk_name:
+        "{{ [ lspv_output.results | json_query(query) | select('contains', item[1].disk_wwn[0]) ][0][0].split()[0] }}"
+      hdisk_pvid:
+        "{{ [ lspv_output.results | json_query(query) | select('contains', item[1].disk_wwn[0]) ][0][0].split()[1] }}"
+      hdisk_wwn_id:
+        "{{ item[1].disk_wwn[0] }}"
+  vars:
+    query: "[?item.vm=='{{ item[0].vm }}'].stdout_lines | [0] "
+  with_nested:
+    - "{{ aixNodes }}"
+    - "{{ powervc_vm_disk_info }}"
+  register: powervc_vm_hdisk_out 
+
+- name: AIX_disk_task | Set wwnid-to-hdisk variable
+  set_fact:
+    pvc_vm_disk_info:
+      "{{ pvc_vm_disk_info | default([]) + [ item.ansible_facts.powervc_vm_hdisk ] }}"
+  with_items:
+    - "{{ powervc_vm_hdisk_out['results'] }}"
+  no_log: True

@@ -1,0 +1,29 @@
+---
+# Handlers for the IBM Spectrum Scale (GPFS) role
+
+- name: wait-for-server
+  wait_for:
+    host: "{{ ansible_default_ipv4.address }}"
+    port: 22
+    state: started
+    delay: 45
+    timeout: 300
+  delegate_to: localhost
+
+- name: accept-server-licenses
+  command: /usr/lpp/mmfs/bin/mmchlicense server --accept -N serverLicense
+  listen: accept-licenses
+  failed_when: false
+
+- name: accept-client-licenses
+  command: /usr/lpp/mmfs/bin/mmchlicense client --accept -N clientLicense
+  listen: accept-licenses
+  failed_when: false
+
+- name: wait-daemon-active
+  shell: /usr/lpp/mmfs/bin/mmgetstate -N localhost -Y | grep -v HEADER | cut -d ':' -f 9
+  register: state
+  until: state.stdout == 'active'
+  retries: 10
+  delay: 30
+  changed_when: false

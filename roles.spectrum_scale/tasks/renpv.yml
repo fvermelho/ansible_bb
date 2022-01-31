@@ -1,0 +1,145 @@
+---
+# Define Network Shared Disks (NSDs) and filesystems
+# RENAME DISKS DEVICES ON AIX NODES
+
+#
+# Inspect existing, free, and defined NSDs
+#
+- name: storage | Define filesystem name
+  set_fact:
+    scale_storage_fsname:
+      "{{ item.filesystem }}"
+  with_items:
+    - "{{ scale_storage }}"
+  no_log: True
+
+- name: renpv | Get AIX server(s) name(s)
+  shell: /usr/lpp/mmfs/bin/mmlscluster -Y|grep clusterNode | grep -v HEADER | cut -d':' -f8
+  register: cluster_servers
+
+- name: renpv | get last disk(s) on AIX server(s)
+  vars:
+    basename: "hdisk{{ scale_storage.0.nsdPrefix }}"
+  shell: ssh {{ item }} "if [ \$(uname) == AIX ]; then lspv | grep {{ basename }} | awk '{print \$1}' | sed 's/A$//g' | sed 's/B$//g';fi"
+  register: last_disk_name
+  with_items:
+    - "{{ cluster_servers.stdout_lines }}"
+  ignore_errors: yes
+
+- name: renpv | set_fact last disk(s)
+  set_fact: 
+    disk_names_tmp:
+            "{{ disk_names_tmp | default([]) + item.stdout_lines }}"
+  with_items:
+    - "{{ last_disk_name.results }}"
+
+- name: renpv | set_fact last disk(s)
+  vars:
+    basename: "hdisk{{ scale_storage.0.nsdPrefix }}"
+  set_fact:
+    disk_names:
+            "{{ disk_names | default([]) + [item[basename|length:]] }}"
+  with_items:
+    - "{{ disk_names_tmp }}"
+
+- name: renpv | set_fact last disk when it's already exists 
+  set_fact:
+    last_disk: "{{ disk_names | sort | last  }}"
+  when:
+    - disk_names is defined
+    - disk_names | length > 0
+
+- name: renpv | set_fact last disk when it's the first
+  set_fact:
+    last_disk: "0"
+  when:
+    - disk_names is undefined
+
+- name: storage | Define device names
+  ansible.utils.update_fact:
+    updates:
+    - path: scale_storage.0.disks.{{ index }}.pvid
+      value: "{{ item.pvid }}"
+    - path: scale_storage.0.disks.{{ index }}.device
+      value: /dev/hdisk{{ scale_storage.0.nsdPrefix }}{{ last_disk | int + 1 + index|int }}
+  register: temp
+  with_items:
+    - "{{ scale_storage.0.disks }}"
+  loop_control:
+    index_var: index
+
+- name: storage | Define device names    
+  set_fact:
+    temp_var: "{{ temp.results | last }}"
+- name: storage | define device names
+  set_fact:  
+    scale_storage: "{{ temp_var.scale_storage }}"
+
+- name: storage | Consolidate defined NSDs
+  set_fact:
+    scale_storage_device:
+      "{{ ansible_play_hosts | map('extract', hostvars, 'scale_storage_device') | sum(start=[]) }}"
+    scale_storage_device:
+      "{{ scale_storage_device | default([]) + [ item.1.device ] }}"
+    scale_storage_nsddefs:
+      "{{ ansible_play_hosts | map('extract', hostvars, 'scale_storage_nsddefs') | sum(start=[]) }}"
+    scale_storage_nsddefs:
+      "{{ scale_storage_nsddefs | default([]) + [ item.1.nsd | default( (item.1.device|replace('hdisk','') ) | basename) ] }}"
+    scale_storage_nsdservers:
+      "{{ scale_storage_nsdservers | default([]) + [ item.1.servers | default(scale_daemon_nodename) ] }}"
+    scale_storage_pvid:
+      "{{ scale_storage_pvid | default([]) + [ item.1.pvid | default(scale_daemon_nodename) ] }}"
+    scale_storage_aix:
+      "{{ scale_storage_aix | default([]) + [ item.1 ] }}"
+  when:
+    - item.1.pvid is defined
+  with_subelements:
+    - "{{ scale_storage }}"
+    - disks
+  no_log: True
+
+#GET STORAGE MODEL AND ADD A OR B ACCORDING TO DATACENTER
+- name: renpv | Storage Datacenter
+  shell: ssh {{ item[0] }} "if [ \$(uname) == AIX ];then lscfg -vl \$(lspv | grep {{ item[1].pvid }} | awk '{print \$1}') | grep \"{{ scale_identificator }}\"|awk -F. '{print \$NF}' ;fi"
+  register: storage_datacenter
+  when:
+    - storageType is defined
+    - storageType2 is defined
+  with_nested: 
+    - "{{ cluster_servers.stdout_lines }}"
+    - "{{ scale_storage_aix }}"
+  ignore_errors: yes
+  no_log: True
+
+
+- name: renpv | Rename disk(s) on AIX server(s)
+  shell: ssh {{ item[0] }} "if [ \$(uname) == AIX ]; then rendev -l \$(lspv|grep {{ item[1].pvid }} |  awk '{print \$1}') -n {{ item[1].device.split('/')[2] }}A;fi"
+  when:
+    - item[1].pvid is defined
+    - item[1].pvc_disk_name is search('lunA-')
+  with_nested:
+    - "{{ cluster_servers.stdout_lines }}"
+    - "{{ scale_storage.0.disks }}"
+  ignore_errors: yes
+
+- name: renpv | Rename disk(s) on AIX server(s)
+  shell: ssh {{ item[0] }} "if [ \$(uname) == AIX ]; then rendev -l \$(lspv|grep {{ item[1].pvid }} | awk '{print \$1}') -n {{ item[1].device.split('/')[2] }}B;fi"
+  when:
+    - item[1].pvid is defined
+    - item[1].pvc_disk_name is search('lunB-')
+  with_nested:
+    - "{{ cluster_servers.stdout_lines }}"
+    - "{{ scale_storage.0.disks }}"
+  ignore_errors: yes
+
+#RENAME DISKS FOR ONLY ONE STORAGE
+- name: renpv | Rename disk(s) on AIX server(s)
+  shell: ssh {{ item[0] }} "if [ \$(uname) == AIX ];then rendev -l \$(lspv | grep {{ item[1].pvid }} | awk '{print \$1}') -n {{ item[1].device.split('/')[2] }};fi"
+  when:
+    - item[1].pvid is defined
+    - item[1].pvc_disk_name is search('lun-')
+  with_nested:
+    - "{{ cluster_servers.stdout_lines }}"
+    - "{{ scale_storage.0.disks }}"
+  ignore_errors: yes
+

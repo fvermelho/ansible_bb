@@ -1,0 +1,41 @@
+---
+# connect to PowerVC and create disks
+# connect to AIX LPARs and recognize disks
+
+
+# Sanity check of configuration variables
+
+- name: check | Check PowerVC URL Variable
+  assert:
+    that:
+      - powervc_url is defined
+    msg: "Please set the variable 'powervc_url'"
+    quiet: true
+- name: check | Check Number of Disks and Size be Provisioned Variable
+  assert:
+    that:
+      - numberDisks is defined
+      - volumeSize is defined
+    msg: "Please set the variable 'numberDisks' and 'volumeSize'"
+    quiet: true
+- name: check | Check Storage Provider Variable
+  assert:
+    that:
+      - storageType is defined
+    msg: "Please set the variable 'storageType'"
+    quiet: true
+- name: check | Check nsdPrefix Variable lenght
+  assert:
+    that:
+      - filesystem_info.nsdPrefix | length <= 9
+    msg: "Please set the variable 'storageType'"
+    quiet: true
+
+- import_tasks: create_disks.yml
+  tags: create
+
+- import_tasks: attach_disks.yml
+  tags: attach
+
+- import_tasks: prepare_vars.yml
+  tags: prepvars

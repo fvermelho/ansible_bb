@@ -1,0 +1,361 @@
+---
+# Define Network Shared Disks (NSDs) and filesystems
+
+#
+# Inspect existing, free, and defined NSDs
+#
+- block:  ## run_once: true
+    - name: storage | Find existing filesystem(s)
+      shell: /usr/lpp/mmfs/bin/mmlsfs all -Y | grep -v HEADER | cut -d ':' -f 7 | uniq
+      register: scale_storage_existing_fs
+      changed_when: false
+      failed_when: false
+
+    - name: storage | Find current filesystem mounts
+      shell: /usr/lpp/mmfs/bin/mmlsmount all -Y | grep -v HEADER
+      register: scale_storage_existing_fsmounts
+      changed_when: false
+      failed_when: false
+
+    - name: storage | Find current filesystem parameters
+      shell: /usr/lpp/mmfs/bin/mmlsfs all -Y | grep -v HEADER
+      register: scale_storage_existing_fsparams
+      changed_when: false
+      failed_when: false
+
+    - name: storage | Find existing NSDs
+      shell: /usr/lpp/mmfs/bin/mmlsnsd -a -Y | grep -v HEADER | cut -d ':' -f 8
+      register: scale_storage_existing_nsds
+      changed_when: false
+      failed_when: false
+
+    - name: storage | Find free NSDs
+      shell: /usr/lpp/mmfs/bin/mmlsnsd -F -Y | grep -v HEADER | cut -d ':' -f 8
+      register: scale_storage_free_nsds
+      changed_when: false
+      failed_when: false
+  run_once: true
+
+- name: storage | Initialize undefined variables
+  set_fact:
+    scale_storage: []
+    scale_storage_nsddefs: []
+    scale_storage_nsdservers: []
+    scale_storage_nsddisks: []
+  when: scale_storage is undefined
+
+- import_tasks: renpv.yml
+  tags: renpv
+
+- import_tasks: diskparm.yml
+  tags: diskparm 
+
+- name: storage | Define filesystem name
+  set_fact:
+    scale_storage_fsname:
+      "{{ item.filesystem }}"
+  with_items:
+    - "{{ scale_storage }}"
+  no_log: True
+
+- name: storage | Find defined NSDs
+  set_fact:
+    scale_storage_nsdservers:
+      "{{ scale_storage_nsdservers | default([]) + [ item.1.servers | default(scale_daemon_nodename) ] }}"
+    scale_storage_nsddisks:
+      "{{ scale_storage_nsddisks | default([]) + [ item.1.device | default() ] }}"
+    scale_storage_pvid:
+      "{{ scale_storage_pvid | default([]) + [ item.1.pvid | default(scale_daemon_nodename) ] }}"
+  when:
+    - item.1.device is defined
+  with_subelements:
+    - "{{ scale_storage }}"
+    - disks
+  no_log: True
+
+- block:  ## run_once: true
+    - name: storage | Consolidate defined NSDs
+      set_fact:
+        scale_storage_nsddefs:
+          "{{ ansible_play_hosts | map('extract', hostvars, 'scale_storage_nsddefs') | sum(start=[]) }}"
+        scale_storage_nsdservers:
+          "{{ ansible_play_hosts | map('extract', hostvars, 'scale_storage_nsdservers') | sum(start=[]) | unique }}"
+        scale_storage_fsdefs:
+          "{{ ansible_play_hosts | map('extract', hostvars, 'scale_storage') | sum(start=[]) | map(attribute='filesystem') | list | unique }}"
+        scale_storage_pvid:
+          "{{ scale_storage_pvid | default([]) + [ item.1.pvid | default(scale_daemon_nodename) ] }}"
+        scale_storage_aix:
+          "{{ scale_storage_aix | default([]) + [ item.1 ] }}"
+        scale_storage_nsddisks:
+          "{{ scale_storage_nsddisks | default([]) + [ item.1.device | default() ] }}"
+
+    - name: storage | Consolidate defined filesystem parameters
+      set_fact:
+        scale_storage_fsparams:
+          "{{ scale_storage_fsparams | default({}) | combine({ item.filesystem:item }, recursive=true) }}"
+      with_items: "{{ ansible_play_hosts | map('extract', hostvars, 'scale_storage') | sum(start=[]) }}"
+      no_log: True
+
+#
+# Create new NSDs
+#
+    - name: storage | Prepare StanzaFile(s) for NSD creation
+      vars:
+        current_fs: "{{ item }}"
+        current_nsds: "{{ scale_storage_nsddefs }}"
+      template:
+        src: StanzaFile.j2
+        dest: /var/tmp/StanzaFile.new.{{ current_fs }}
+      register: scale_storage_stanzafile_new
+      with_items: "{{ scale_storage_fsdefs }}"
+
+    - name: Storage | Define servers
+      shell: /usr/lpp/mmfs/bin/mmlscluster -Y | grep clusterNode|grep -v HEADER | cut -d':' -f8
+      register: scale_storage_serversstanza
+
+    - name: Storage | Define servers with PVID Volumes
+      shell: ssh {{ item }} "lspv | grep {{ scale_storage_pvid[0] }}"
+      register: scale_storage_output
+      with_items: "{{ scale_storage_serversstanza.stdout.split('\n') }}"
+      ignore_errors: yes
+
+    - name: Storage | Last disk server order
+      shell: /usr/lpp/mmfs/bin/mmlsnsd -Y | grep -v HEADER|grep -v quorum | grep "{{ scale_storage_fsdefs }}" | tail -1 | cut -d':' -f10
+      register: scale_storage_server_order
+
+# Setting Servers with only AIX with the PVID disk volume
+    - name: Storage | Load var with nsdservers order
+      set_fact:
+        scale_storage_serverswdisk: "{{ scale_storage_server_order.stdout_lines[0].split(',') }}"
+      when: scale_storage_server_order.stdout_lines | length > 0
+
+    - name: Storage | Define Servers With Disk list
+      set_fact:
+        scale_storage_serverswdisk: "{{ scale_storage_serverswdisk | default([]) + [ item.item ] }}"
+      when: 
+        - item.rc == 0
+        - scale_storage_server_order.stdout_lines | length == 0
+      with_items: "{{ scale_storage_output.results }}"
+      no_log: True
+
+# LOOP TO CHANGE THE NSD SERVER LIST ORDER
+    - name: Storage | Setting the servers with PVID on the StanzaFile
+      vars:
+        current_fs: "{{ item[0] }}"
+        current_disk: "{{ item[1] }}"
+        size_serverswdisk: "{{ scale_storage_serverswdisk | length }}"
+        scale_storage_serverswdisk_x: "{% if index < (scale_storage_serverswdisk|length) %} {{ scale_storage_serverswdisk[index+1:] + scale_storage_serverswdisk[:index+1] }} {% else %} {{ scale_storage_serverswdisk[(index % size_serverswdisk|int)+1:] + scale_storage_serverswdisk[:(index % size_serverswdisk|int)+1] }} {% endif %}"
+      replace:
+        path: /var/tmp/StanzaFile.new.{{ current_fs }}
+        after: '  nsd={{ current_disk }}'
+        regexp: '  servers=(.*)$'
+        replace: "  servers={{ scale_storage_serverswdisk_x | replace('[','') | replace(']','') | replace(\"'\",'') | replace(' ','') }}"
+      with_nested:
+        - "{{ scale_storage_fsdefs }}"
+        - "{{ scale_storage_nsddefs | unique}}"
+      loop_control:
+        index_var: index
+
+
+# LOOP TO CHANGE THE DEVICE NAME ACCORDING THE STORAGE
+    - name: Storage | Setting DEVICE name according to Storage DC - A
+      vars:
+        current_fs: "{{ scale_storage_fsdefs.0 }}"
+        current_disk: "{{ item.item.1.device }}"
+      replace:
+        path: /var/tmp/StanzaFile.new.{{ current_fs }}
+        regexp: '  device={{ current_disk }}$'
+        replace: '  device={{ current_disk }}A' 
+      when:
+        - item.item.1.pvc_disk_name is search('lunA-')
+      with_items:
+        - "{{ storage_datacenter.results }}"
+      no_log: True
+
+    - name: Storage | Setting DEVICE name according to Storage DC - B
+      vars:
+        current_fs: "{{ scale_storage_fsdefs.0 }}"
+        current_disk: "{{ item.item.1.device }}"
+      replace:
+        path: /var/tmp/StanzaFile.new.{{ current_fs }}
+        regexp: '  device={{ current_disk }}$'
+        replace: '  device={{ current_disk }}B'
+      when:
+        - item.item.1.pvc_disk_name is search('lunB-')
+      with_items:
+        - "{{ storage_datacenter.results }}"
+      no_log: True
+
+    - name: storage | Reset scale_storage_aix variable
+      set_fact:
+        scale_storage_aix: []
+
+    - name: Storage | Define hdisk names
+      set_fact:
+        scale_storage_aix:
+          "{{ scale_storage_aix | default([]) + [ item.1 ] }}"
+      when:
+        - item.1.device is defined
+      with_subelements:
+        - "{{ scale_storage }}"
+        - disks
+      no_log: True
+
+# LOOP TO CHANGE THE NSD NAME ACCORDING THE STORAGE
+    - name: Storage | Setting NSD name according to Storage DC - A
+      vars:
+        current_fs: "{{ scale_storage_fsdefs.0 }}"
+        current_disk : "{{ item.device }}"
+      replace:
+        path: /var/tmp/StanzaFile.new.{{ current_fs }}
+        after: '  device={{ current_disk }}A'
+        regexp: '  nsd=(.*)$'
+        replace: '  nsd=\1A'
+        before: '  usage=(.*)$'
+      when:
+        - item is defined
+      with_items:
+        - "{{ scale_storage_aix }}"
+      ignore_errors: yes
+
+    - name: Storage | Setting NSD name according to Storage DC - B
+      vars:
+        current_fs: "{{ scale_storage_fsdefs.0 }}"
+        current_disk: "{{ item.device }}"
+      replace:
+        path: /var/tmp/StanzaFile.new.{{ current_fs }}
+        after: '  device={{ current_disk }}B'
+        regexp: '  nsd=(.*)$'
+        replace: '  nsd=\1B'
+        before: '  usage=(.*)$'
+      when:
+        - item is defined
+      with_items:
+        - "{{ scale_storage_aix }}"
+      ignore_errors: yes
+
+    - name: Storage | Setting failureGroup according to Storage DC - B
+      vars:
+        current_fs: "{{ scale_storage_fsdefs.0 }}"
+        current_disk: "{{ item.device }}"
+      replace:
+        path: /var/tmp/StanzaFile.new.{{ current_fs }}
+        after: '  device={{ current_disk }}B'
+        regexp: '  failureGroup=1'
+        replace: '  failureGroup=2'
+        before: '  pool=(.*)$'
+      when:
+        - item is defined
+      with_items:
+        - "{{ scale_storage_aix }}"
+      ignore_errors: yes
+
+    - name: storage | Set nsd prefix
+      set_fact:
+        scale_storage_nsdprefix:
+          "{{ item.nsdPrefix }}"
+      when:
+        - item.nsdPrefix is defined
+      with_items:
+        - "{{ scale_storage }}"
+      no_log: True
+
+    - name: Storage | Applying nsd prefix to Stanzafile
+      vars:
+        current_fs: "{{ scale_storage_fsdefs.0 }}"
+        current_disk: "{{ item.device }}"
+      replace:
+        path: /var/tmp/StanzaFile.new.{{ current_fs }}
+        after: '  device={{ current_disk }}'
+        regexp: '  nsd=nsd_{{ current_fs }}'
+        replace: '  nsd={{ scale_storage_nsdprefix}}'
+        before: '  pool=(.*)$'
+      when:
+        - scale_storage_nsdprefix is defined
+        - item is defined
+      with_items:
+        - "{{ scale_storage_aix }}"
+      ignore_errors: yes
+
+    - name: storage | Create new NSDs
+      vars:
+        verify: "{{ 'no' if scale_storage_fsparams[item.item].overwriteNSDs | default(scale_storage_filesystem_defaults.overwriteNSDs) else 'yes' }}"
+      command: /usr/lpp/mmfs/bin/mmcrnsd -F /var/tmp/StanzaFile.new.{{ item.item }} -v {{ verify }}
+      when:
+        - item.size > 1
+      with_items: "{{ scale_storage_stanzafile_new.results }}"
+
+    - name: storage | Create new filesystem(s)
+      command:
+        /usr/lpp/mmfs/bin/mmcrfs {{ item.item }}
+        -F /var/tmp/StanzaFile.new.{{ item.item }}
+        -B {{ scale_storage_fsparams[item.item].blockSize | default(scale_storage_filesystem_defaults.blockSize) }}
+        -m {{ scale_storage_fsparams[item.item].defaultMetadataReplicas | default(scale_storage_filesystem_defaults.defaultMetadataReplicas) }}
+        -r {{ scale_storage_fsparams[item.item].defaultDataReplicas | default(scale_storage_filesystem_defaults.defaultDataReplicas) }}
+        -n {{ scale_storage_fsparams[item.item].numNodes | default(scale_storage_filesystem_defaults.numNodes) }}
+        -A {{ 'yes' if scale_storage_fsparams[item.item].automaticMountOption | default(scale_storage_filesystem_defaults.automaticMountOption) else 'no' }}
+        -T {{ scale_storage_fsparams[item.item].defaultMountPoint | default(scale_storage_filesystem_defaults.defaultMountPoint_prefix + item.item) }}
+      when:
+        - item.item not in scale_storage_existing_fs.stdout_lines
+        - item.size > 1
+      with_items: "{{ scale_storage_stanzafile_new.results }}"
+
+    - name: storage | Mount new filesystem(s)
+      command: /usr/lpp/mmfs/bin/mmmount {{ item.item }} -a
+      when:
+        - item.item not in scale_storage_existing_fs.stdout_lines
+        - item.size > 1
+        - scale_storage_fsparams[item.item].automaticMountOption | default(scale_storage_filesystem_defaults.automaticMountOption)
+      with_items: "{{ scale_storage_stanzafile_new.results }}"
+
+    - name: storage | Extend existing filesystem(s)
+      command: /usr/lpp/mmfs/bin/mmadddisk {{ item.item }} -F /var/tmp/StanzaFile.new.{{ item.item }}
+      when:
+        - item.item in scale_storage_existing_fs.stdout_lines
+        - item.size > 1
+      with_items: "{{ scale_storage_stanzafile_new.results }}"
+
+    - name: storage | checking if tieBreaker disk exists
+      shell: /usr/lpp/mmfs/bin/mmlsnsd -a -Y | grep -v HEADER | grep "{{ scale_storage_fsdefs[0] }}" | cut -d ':' -f 8|grep quorum
+      register: scale_storage_tiebreakertask
+      ignore_errors: yes
+
+# Check and create tiebreaker disk
+    - import_tasks: threetier.yml
+      tags: threetier
+      when:
+        - scale_storage_tiebreakertask.rc != 0
+
+#
+# Cleanup
+#
+    - name: storage | Cleanup new NSD StanzaFile(s)
+      file:
+        path: /var/tmp/StanzaFile.new.{{ item }}
+        state: absent
+      with_items: "{{ scale_storage_fsdefs }}"
+
+    - name: storage | Cleanup new tiebreaker NSD StanzaFile(s)
+      file:
+        path: /var/tmp/StanzaFile.3tier.{{ item }}
+        state: absent
+      with_items: "{{ scale_storage_fsdefs }}"
+
+    - meta: flush_handlers
+
+#
+# Prepare stanzas for next run
+#
+
+    - name: storage | Prepare existing NSD StanzaFile(s) for next run
+      vars:
+        current_fs: "{{ item }}"
+        current_nsds:
+          # all defined NSDs
+          "{{ scale_storage_nsddefs }}"
+      template:
+        src: StanzaFile.j2
+        dest: /var/tmp/StanzaFile.{{ current_fs }}
+      when: scale_storage_nsddefs | difference(scale_storage_existing_nsds.stdout_lines) | union(scale_storage_free_nsds.stdout_lines) | length > 0
+      with_items: "{{ scale_storage_fsdefs }}"
+

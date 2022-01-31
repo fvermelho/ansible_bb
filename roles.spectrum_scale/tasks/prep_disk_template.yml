@@ -1,0 +1,8 @@
+---
+- name: prepare | unique variables for Spectrum Scale disks
+  set_fact:
+    variables_temp: "{{ pvc_vm_disk_info | json_query('[].{\"hdisk_pvid\": hdisk_pvid, \"pvc_disk_name\": pvc_disk_name, \"hdisk_wwn_id\": hdisk_wwn_id}') | unique }}"
+
+
+- name: prepare | unique variables for Spectrum Scale disks
+  local_action: template src=gpfs_vars.j2 dest=host_vars/bridge2

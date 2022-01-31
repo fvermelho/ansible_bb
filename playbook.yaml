@@ -1,0 +1,79 @@
+---
+#############################################################################################
+###                                                                                       ###
+### powervc_url = PowerVC IP/hostname URL                                                 ###
+### mainNode = Spectrum Scale Node where the tasks will be performed                      ###
+### clustername = name of the cluster on Spectrum Scale                                   ###
+### filesystem = name of the Spectrum Scale filesystem to be created or extended          ###
+### numberDisks = quantity of disks to be provisioned on the Storage by PowerVC           ###
+### volumeSize = size of each disk that will be provisioned on the Storage by PowerVC     ###
+### storageType = name of the Storage Template on the PowerVC                             ###
+### storageType2 = name of the Second Storage Template on the PowerVC (optional)          ###
+### aixNodes = name of the AIX VMs on the PowerVC where the disks will be attached on     ###
+### automaticMountOption = set the filesystem to be mounted on the startup of the cluster ###
+### defaultMountPoint = mount point where the new filesystem will be mounted on           ###
+### tieBreaker = VM(linux) where the TieBreaker disk(logical volume) must be created      ###
+### nsdPrefix = prefix to be used on the nsd names during the nsd creation task           ###
+###                                                                                       ###
+#############################################################################################
+
+
+###################################################
+###                                             ###
+###              IBM PowerVC Tasks              ###                              
+###                                             ###
+###################################################
+
+- hosts: localhost
+  vars:
+    powervc_url: 10.3.3.129
+    clustername: gpfscluster101
+    filesystem: db2fs
+    numberDisks: 3
+    volumeSize: 10
+    storageType: V7000 base template
+    storageType2: V7000 second pool
+
+    filesystem_info:
+      blockSize: 4M
+      automaticMountOption: true
+      defaultMountPoint: /DB2
+      tieBreaker: FVlin2
+      nsdPrefix: db2nsd
+
+    aixNodes:
+      - vm: FVaix1
+      - vm: FVaix2
+      - vm: FVaix3
+
+        #PVC_USER: root
+        #PVC_PASSWD: senha
+
+  vars_prompt:
+    - name: PVC_USER
+      prompt: What is your PowerVC Username ?
+      private: no
+    - name: PVC_PASSWD
+      prompt: What is password ?
+      private: yes
+
+  roles:
+    - roles.powervc
+
+###################################################
+###                                             ###
+###          IBM Spectrum Scale Tasks           ###
+###                                             ###
+###################################################
+
+- hosts: FVaix1
+  become: True
+  vars_prompt:
+    - name: ansible_ssh_user
+      prompt: User to connect on Spectrum Scale Cluster ?
+      private: no
+    - name: ansible_ssh_pass
+      prompt: What is you ssh password ?
+      private: yes
+  roles:
+   - roles.spectrum_scale

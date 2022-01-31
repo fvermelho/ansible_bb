@@ -1,0 +1,21 @@
+---
+scale_storage:
+  - filesystem: {{ filesystem }}
+    blockSize: {{ filesystem_info.blockSize }}
+    automaticMountOption: {{ filesystem_info.automaticMountOption }}
+    defaultMountPoint: {{ filesystem_info.defaultMountPoint }} 
+    tieBreaker: {{ filesystem_info.tieBreaker }}
+    nsdPrefix: {{ filesystem_info.nsdPrefix }} 
+    disk_counter: {{ disk_counter }}
+    disks:
+{% for entry in variables_temp -%}
+{% set pvid = entry.hdisk_pvid | basename -%}
+{% set pvc_disk_name = entry.pvc_disk_name | basename -%}
+{% set disk_wwnid = entry.hdisk_wwn_id | basename -%}
+# DISK
+      - pvid: {{ pvid }} 
+        pvc_disk_name: {{ pvc_disk_name }}
+        disk_wwnid: {{ disk_wwnid }}
+{% endfor %}
+
+

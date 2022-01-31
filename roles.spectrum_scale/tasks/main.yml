@@ -1,0 +1,28 @@
+---
+# Install and configure IBM Spectrum Scale (GPFS)
+         
+- name: Include vars from PowerVC role
+  include_vars:
+    file: host_vars/bridge1
+
+- import_tasks: cfgmgr_disks.yml
+  tags: cfgmgr
+
+- import_tasks: prep_disk_template.yml
+  tags: prepare_disk
+
+- name: Include vars from PowerVC role
+  include_vars: 
+    file: host_vars/bridge2
+
+- import_tasks: check.yml
+  tags: always
+
+- import_tasks: cluster.yml
+  tags: cluster
+
+- import_tasks: config.yml
+  tags: config
+
+- import_tasks: storage.yml
+  tags: storage

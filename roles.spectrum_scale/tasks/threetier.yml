@@ -1,0 +1,83 @@
+---
+# Define Network Shared Disks (NSDs) and filesystems
+# CREATE THE TIEBREAKER DISK
+
+#
+# Inspect existing, free, and defined NSDs
+#
+
+- name: tieBreaker | validate tieBreaker disk variables
+  set_fact:
+    scale_storage_threetier:
+      "{{ item.tieBreaker }}"
+    scale_storage_fsname:
+      "{{ item.filesystem }}"
+  when:
+    - item.tieBreaker is defined
+  with_items:
+    - "{{ scale_storage }}"
+  no_log: True
+
+- name: tieBreaker | create Logical Volume for tieBreaker disk
+  shell: ssh {{ scale_storage_threetier }} "lvcreate -L 1G -n {{ scale_storage_fsname }}_lv gpfsvg"
+  register: output_lvcreate
+  when:
+    - scale_storage_threetier is defined
+
+- name: tieBreaker | get deviceMapper name for tieBreaker Logical Volume
+  shell: ssh {{ scale_storage_threetier }} "ls -l /dev/mapper | grep -w {{ scale_storage_fsname }}_lv | cut -d/ -f2"
+  register: output_devicemapper
+  when:
+    - scale_storage_threetier is defined
+    - output_lvcreate.rc == 0
+
+- name: storage | Set nsd prefix
+  set_fact:
+    scale_storage_nsdprefix:
+      "{{ item.nsdPrefix }}"
+  when:
+    - item.nsdPrefix is defined
+  with_items:
+    - "{{ scale_storage }}"
+  no_log: True
+
+- name: tieBreaker | create stanzaFile for NSD creation
+  copy: 
+    dest: "/var/tmp/StanzaFile.3tier.{{ scale_storage_fsname }}"
+    content: |
+      %nsd:
+        device=/dev/{{ output_devicemapper.stdout_lines[0] }}
+        nsd=nsd_{{ scale_storage_fsname }}_quorum
+        servers={{ scale_storage_threetier }}
+        usage=descOnly
+  when:
+    - scale_storage_threetier is defined
+    - scale_storage_nsdprefix is not defined
+    - output_lvcreate.rc == 0
+
+- name: tieBreaker | create stanzaFile for NSD creation
+  copy:
+    dest: "/var/tmp/StanzaFile.3tier.{{ scale_storage_fsname }}"
+    content: |
+      %nsd:
+        device=/dev/{{ output_devicemapper.stdout_lines[0] }}
+        nsd={{ scale_storage_nsdprefix }}_quorum
+        servers={{ scale_storage_threetier }}
+        usage=descOnly
+  when:
+    - scale_storage_threetier is defined
+    - scale_storage_nsdprefix is defined
+    - output_lvcreate.rc == 0
+
+
+- name: tieBreaker | Create new nsd for tieBreaker 
+  command: /usr/lpp/mmfs/bin/mmcrnsd -F /var/tmp/StanzaFile.3tier.{{ scale_storage_fsname }} -v yes
+  when:
+    - scale_storage_threetier is defined
+    - output_lvcreate.rc == 0
+
+- name: tieBreaker | Extend existing filesystem(s) with tieBreaker disk
+  command: /usr/lpp/mmfs/bin/mmadddisk {{ scale_storage_fsname }} -F /var/tmp/StanzaFile.3tier.{{ scale_storage_fsname }}
+  when:
+    - scale_storage_threetier is defined
+    - output_lvcreate.rc == 0

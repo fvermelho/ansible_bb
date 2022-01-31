@@ -1,0 +1,241 @@
+---
+- name: connection | Get Token
+  uri:
+    url: 'https://{{ powervc_url }}/powervc/openstack/identity/v3/auth/tokens'
+    method: POST
+    validate_certs: no
+    headers:
+      Vary: "X-Auth-Token, X-Subject-Token"
+      Content-Type: "application/json"
+      Accept: "application/json"
+    body_format: json
+    body: >
+      {
+              "auth": {
+                      "scope": {
+                              "project": {
+                                      "domain": {
+                                              "name": "Default"
+                                      },
+                                      "name": "ibm-default"
+                              }
+                      },
+                      "identity": {
+                              "password": {
+                                      "user": {
+                                              "domain": {
+                                                      "name": "Default"
+                                              },
+                                              "password": "{{ PVC_PASSWD }}",
+                                              "name": "{{ PVC_USER }}" 
+                                      }
+                              },
+                              "methods": [
+                                      "password"
+                              ]
+                      }
+              }
+      }
+    return_content: yes
+    status_code: 201
+  register: token
+
+- name: connection | Set variable TOKEN
+  set_fact: TOKEN="{{ token['x_subject_token'] }}"
+
+- name: connection | Get TENANT ID
+  uri:
+    url: 'https://{{ powervc_url }}/powervc/openstack/identity/v3/projects'
+    method: GET
+    use_proxy: no
+    validate_certs: no
+    return_content: no
+    headers:
+      X-Auth-Token: "{{ TOKEN }}"
+  register: tenant_id
+
+- name: connection | Set variable TENANTID
+  set_fact: 
+    TENANTID: "{{ tenant_id['json']['projects'] | json_query('[?name == `ibm-default`].id | [0]') }}"
+
+- name: connection | Get VMs/LPARs ID on PowerVC
+  uri:
+    url: 'https://{{ powervc_url }}:8774/v2.1/{{ TENANTID }}/servers'
+    method: GET
+    use_proxy: no
+    validate_certs: no
+    return_content: no
+    headers:
+      X-Auth-Token: "{{ TOKEN }}"
+  register: vms_name
+
+- name: connection | Set VMID variable
+  set_fact:
+    vms_names:
+      "{{ vms_names | default([]) + [ item.vm ] }}"
+    vms_vmid:
+      "{{ vms_vmid | default([]) + [ vms_name['json']['servers'] | json_query(query) ] }}"
+  vars:
+    query: "[?name=='{{ item.vm }}'].id | [0]"
+  with_items:
+    - "{{ aixNodes }}"
+
+- name: connection | Get existing disks
+  uri:
+    url: 'https://{{ powervc_url }}:9000/v3/{{ TENANTID }}/volumes'
+    method: GET
+    use_proxy: no
+    validate_certs: no
+    return_content: no
+    headers:
+      X-Auth-Token: "{{ TOKEN }}"
+  register: exist_disks
+
+- name: create_disk | Initialize disk count variable
+  set_fact:
+    disk_counter: "{{ '0' }}"
+
+- name: create_disk | Get disks name
+  set_fact:
+    t_disk_names:
+      "{{ t_disk_names | default([]) + [ item.name.split('-')[-1] | int ] }}"
+  with_items:
+    - "{{ exist_disks['json']['volumes'] }}"
+  when: 
+   - "item.name is search('lun-' + filesystem + '-')"
+   - storageType is defined
+   - storageType2 is undefined
+
+- name: create_disk | Get disks name
+  set_fact:
+    t_disk_names:
+      "{{ t_disk_names | default([]) + [ item.name.split('-')[-1] | int ] }}"
+  with_items:
+    - "{{ exist_disks['json']['volumes'] }}"
+  when: 
+   - "item.name is search('lunA-' + filesystem + '-')"
+   - storageType is defined
+   - storageType2 is defined
+
+- name: create_disk | Get last disk
+  set_fact:
+    disk_counter:
+      "{{ t_disk_names |  max }}"
+  when: t_disk_names is defined
+
+# CREATE LUNS WHEN ONLY ONE STORAGE PROVIDER IS BEING USED 
+- name: create_disk | Create storage volumes
+  uri:
+    url: 'https://{{ powervc_url }}:9000/v3/{{ TENANTID }}/volumes'
+    method: POST
+    validate_certs: no
+    headers:
+      X-Auth-Token: "{{ TOKEN }}"
+    body_format: json
+    body:
+      volume:
+        size: "{{ volumeSize }}"
+        volume_type: "{{ storageType }}"
+        multiattach: true 
+        description: GPFS disk created by ANSIBLE for cluster {{ clustername }} - Filesystem {{ filesystem }}
+        name: lun-{{ filesystem }}-{{ disk_counter|int + index|int + 1 }}
+    return_content: yes
+    status_code: 202
+  register: disk_creation
+  with_sequence: count={{ numberDisks }}
+  loop_control:
+    index_var: index
+  when:
+    - storageType is defined
+    - storageType2 is undefined
+
+- name: create_disk | Set new lun names variable
+  set_fact:
+    disk_names:
+      "{{ disk_names | default([]) + [ item.invocation.module_args.body.volume.name ] }}"
+  when:
+    - storageType is defined
+    - storageType2 is undefined
+  with_items:
+    - "{{ disk_creation['results'] }}"
+  no_log: True
+
+# CREATE LUNS ON STORAGE PROVIDER #1 WHEN BOTH ARE INFORMED
+- name: create_disk | Create storage volumes
+  uri:
+    url: 'https://{{ powervc_url }}:9000/v3/{{ TENANTID }}/volumes'
+    method: POST
+    validate_certs: no
+    headers:
+      X-Auth-Token: "{{ TOKEN }}"
+    body_format: json
+    body:
+      volume:
+        size: "{{ volumeSize }}"
+        volume_type: "{{ storageType }}"
+        multiattach: true
+        description: GPFS disk created by ANSIBLE for cluster {{ clustername }} - Filesystem {{ filesystem }}
+        name: lunA-{{ filesystem }}-{{ disk_counter|int + index|int + 1 }}
+    return_content: yes
+    status_code: 202
+  register: disk_creation
+  with_sequence: count={{ numberDisks }}
+  loop_control:
+    index_var: index
+  when:
+    - storageType is defined
+    - storageType2 is defined
+
+
+- name: create_disk | Set new lun names variable
+  set_fact:
+    disk_names:
+      "{{ disk_names | default([]) + [ item.invocation.module_args.body.volume.name ] }}"
+  when:
+    - storageType is defined
+    - storageType2 is defined
+  with_items:
+    - "{{ disk_creation['results'] }}"
+  no_log: True
+
+# CREATE LUNS ON STORAGE PROVIDER #2 WHEN BOTH ARE INFORMED
+- name: create_disk | Create storage volumes
+  uri:
+    url: 'https://{{ powervc_url }}:9000/v3/{{ TENANTID }}/volumes'
+    method: POST
+    validate_certs: no
+    headers:
+      X-Auth-Token: "{{ TOKEN }}"
+    body_format: json
+    body:
+      volume:
+        size: "{{ volumeSize }}"
+        volume_type: "{{ storageType2 }}"
+        multiattach: true
+        description: GPFS disk created by ANSIBLE for cluster {{ clustername }} - Filesystem {{ filesystem }}
+        name: lunB-{{ filesystem }}-{{ disk_counter|int + index|int + 1 }}
+    return_content: yes
+    status_code: 202
+  register: disk_creation
+  with_sequence: count={{ numberDisks }}
+  loop_control:
+    index_var: index
+  when:
+    - storageType is defined
+    - storageType2 is defined
+
+- name: create_disk | Sleeping 10 seconds for disk provisioning
+  pause:
+    seconds: 10
+
+- name: create_disk | Set new lun names variable
+  set_fact:
+    disk_names:
+      "{{ disk_names | default([]) + [ item.invocation.module_args.body.volume.name ] }}"
+  when:
+    - storageType is defined
+    - storageType2 is defined
+  with_items:
+    - "{{ disk_creation['results'] }}"
+  no_log: True
+

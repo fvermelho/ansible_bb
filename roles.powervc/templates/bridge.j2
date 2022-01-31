@@ -1,0 +1,14 @@
+---
+scale_storage:
+  - filesystem: {{ filesystem }}
+    blockSize: {{ filesystem_info.blockSize }}
+    automaticMountOption: {{ filesystem_info.automaticMountOption }}
+    defaultMountPoint: {{ filesystem_info.defaultMountPoint }} 
+    tieBreaker: {{ filesystem_info.tieBreaker }}
+    nsdPrefix: {{ filesystem_info.nsdPrefix }} 
+    disk_counter: {{ disk_counter }}
+
+powervc_vm_disk_info: {{ powervc_vm_disk_info }}
+aixNodes: {{ aixNodes }}
+
+
