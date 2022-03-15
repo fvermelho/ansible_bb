@@ -50,28 +50,14 @@
     powervc_vm_disk_info:
       "{{ powervc_vm_disk_info | default([]) + [ item.ansible_facts.disk_info_pvc ] }}"
   with_items:
-    - "{{ disk_info_pvc['results'] }}"
-      # - "{{ disk_info_pv c}}"
+    - "{{ disk_info_pvc }}"
   no_log: True
 
 - name: attach_disk | Attach volumes to AIX VMs | This task may take a while
-  uri:
-    url: 'https://{{ powervc_url }}/powervc/openstack/compute/v2.1/{{ TENANTID }}/servers/{{ item[1] }}/action'
-    method: POST
-    validate_certs: no
-    headers:
-      X-Auth-Token: "{{ TOKEN }}"
-    body_format: json
-    body: >
-      {"bulkVolumeAttach":{"volumeAttachment":[{"volumeId":"{{ item[0] }}","device":null,"is_boot_volume":"False"}]}}
-    return_content: yes
-    status_code: 202
-  register: disk_creation
+  include_tasks: loop_attach.yml
   with_nested:
     - "{{ disk_ids }}"
     - "{{ vms_vmid }}"
-  loop_control:
-    pause: 6
 
 - name: attach_disk | Sleeping 10 seconds for disk attach ends
   pause:
