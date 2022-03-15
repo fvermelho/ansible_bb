@@ -156,6 +156,13 @@
       loop_control:
         index_var: index
 
+    - debug:
+        msg: "{{ item.item.1.pvc_disk_name }}"
+      when:
+        - item.item.1.pvc_disk_name is defined
+      with_items:
+        - "{{ storage_datacenter.results }}"
+
 
 # LOOP TO CHANGE THE DEVICE NAME ACCORDING THE STORAGE
     - name: Storage | Setting DEVICE name according to Storage DC - A
@@ -168,6 +175,9 @@
         replace: '  device={{ current_disk }}A' 
       when:
         - item.item.1.pvc_disk_name is search('lunA-')
+#        - scale_storageA is defined
+#        - scale_storageB is defined
+#        - item.stdout | trim  == "{{ scale_storageA }}"
       with_items:
         - "{{ storage_datacenter.results }}"
       no_log: True
@@ -182,6 +192,9 @@
         replace: '  device={{ current_disk }}B'
       when:
         - item.item.1.pvc_disk_name is search('lunB-')
+#        - scale_storageA is defined
+#        - scale_storageB is defined
+#        - item.stdout | trim  == "{{ scale_storageB }}"
       with_items:
         - "{{ storage_datacenter.results }}"
       no_log: True
@@ -213,6 +226,10 @@
         replace: '  nsd=\1A'
         before: '  usage=(.*)$'
       when:
+#        - storageType is defined
+#        - storageType2 is defined
+#        - scale_storageA is defined
+#        - scale_storageB is defined
         - item is defined
       with_items:
         - "{{ scale_storage_aix }}"
@@ -229,6 +246,10 @@
         replace: '  nsd=\1B'
         before: '  usage=(.*)$'
       when:
+#        - storageType is defined
+#        - storageType2 is defined
+#        - scale_storageA is defined
+#        - scale_storageB is defined
         - item is defined
       with_items:
         - "{{ scale_storage_aix }}"
@@ -245,6 +266,10 @@
         replace: '  failureGroup=2'
         before: '  pool=(.*)$'
       when:
+#        - storageType is defined
+#        - storageType2 is defined
+#        - scale_storageA is defined
+#        - scale_storageB is defined
         - item is defined
       with_items:
         - "{{ scale_storage_aix }}"
