@@ -1,0 +1,64 @@
+---
+- name: attach_disk | Gather new volumes information 
+  uri:
+    url: 'https://{{ powervc_url}}:9000/v3/{{ TENANTID }}/volumes'
+    method: GET
+    use_proxy: no
+    validate_certs: no
+    return_content: no
+    headers:
+      X-Auth-Token: "{{ TOKEN }}"
+  register: volumes_info
+
+- name: attach_disk | Get new disks volume IDs
+  set_fact:
+    disk_ids:
+      "{{ disk_ids | default([]) + [ volumes_info['json']['volumes'] | json_query(query) ] }}"
+  vars:
+    query: "[?name=='{{ item }}'].id | [0]"
+  with_items:
+    - "{{ disk_names }}"
+
+- name: attach_disk | Gather disk WWN ID
+  uri:
+    url: 'https://{{ powervc_url}}:9000/v3/{{ TENANTID }}/volumes/{{ item }}'
+    method: GET
+    use_proxy: no
+    validate_certs: no
+    return_content: no
+    headers:
+      X-Auth-Token: "{{ TOKEN }}"
+  register: disks_wwn_out
+  with_items:
+    - "{{ disk_ids }}"
+  no_log: True
+
+- name: attach_disk | Prepare disk WWN ID variable
+  set_fact:
+    disk_info_pvc:
+      disk_wwn:
+        "{{ disk_wwn | default([]) + [ item.json.volume.metadata.volume_wwn ]  }}"
+      disk_pvc_name:
+        "{{ disk_pvc_name | default([]) + [ item.json.volume.name ] }}"
+  with_items:
+    - "{{ disks_wwn_out['results'] }}"    
+  register: disk_info_pvc
+  no_log: True
+
+- name: attach_disk | Set disk WWN ID variable
+  set_fact:
+    powervc_vm_disk_info:
+      "{{ powervc_vm_disk_info | default([]) + [ item.ansible_facts.disk_info_pvc ] }}"
+  with_items:
+    - "{{ disk_info_pvc }}"
+  no_log: True
+
+- name: attach_disk | Attach volumes to AIX VMs | This task may take a while
+  include_tasks: loop_attach.yml
+  with_nested:
+    - "{{ disk_ids }}"
+    - "{{ vms_vmid }}"
+
+- name: attach_disk | Sleeping 10 seconds for disk attach ends
+  pause:
+    seconds: 10
