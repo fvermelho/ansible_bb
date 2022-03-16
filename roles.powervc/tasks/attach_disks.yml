@@ -50,7 +50,8 @@
     powervc_vm_disk_info:
       "{{ powervc_vm_disk_info | default([]) + [ item.ansible_facts.disk_info_pvc ] }}"
   with_items:
-    - "{{ disk_info_pvc.results }}"
+    - "{{ disk_info_pvc }}"
+    #- "{{ disk_info_pvc.results }}"
   no_log: True
 
 - name: attach_disk | Attach volumes to AIX VMs | This task may take a while
