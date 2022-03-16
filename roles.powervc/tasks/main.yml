@@ -11,6 +11,12 @@
       - powervc_url is defined
     msg: "Please set the variable 'powervc_url'"
     quiet: true
+    #- name: check | Check Spectrum Scale Main Node Variable
+    #  assert:
+    #    that:
+    #      - mainNode is defined
+    #    msg: "Please set the variable 'mainNode'"
+    #    quiet: true
 - name: check | Check Number of Disks and Size be Provisioned Variable
   assert:
     that:
@@ -36,6 +42,9 @@
 
 - import_tasks: attach_disks.yml
   tags: attach
+
+  #- import_tasks: cfgmgr_disks.yml
+  #  tags: cfgmgr
 
 - import_tasks: prepare_vars.yml
   tags: prepvars

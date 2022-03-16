@@ -224,9 +224,30 @@
     - storageType is defined
     - storageType2 is defined
 
-- name: create_disk | Sleeping 10 seconds for disk provisioning
-  pause:
-    seconds: 10
+- name: create_disk | Gather new volumes information
+  uri:
+    url: 'https://{{ powervc_url}}:9000/v3/{{ TENANTID }}/volumes'
+    method: GET
+    use_proxy: no
+    validate_certs: no
+    return_content: no
+    headers:
+      X-Auth-Token: "{{ TOKEN }}"
+  register: volumes_info_t
+
+- name: create_disk | Get new disks volume IDs
+  set_fact:
+    disk_ids_t:
+      "{{ disk_ids_t | default([]) + [ volumes_info_t['json']['volumes'] | json_query(query) ] }}"
+  vars:
+    query: "[?name=='{{ item }}'].id | [0]"
+  with_items:
+    - "{{ disk_names }}"
+
+- name: create_disk | Wait for disk status OK
+  include_tasks: loop_status_create.yml
+  with_items:
+    - "{{ disk_ids_t }}"
 
 - name: create_disk | Set new lun names variable
   set_fact:

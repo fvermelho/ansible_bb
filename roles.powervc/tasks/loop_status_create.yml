@@ -1,0 +1,15 @@
+---
+- name: create_disk | Wait for disk status OK
+  uri:
+    url: 'https://{{ powervc_url}}:9000/v3/{{ TENANTID }}/volumes/{{ item }}'
+    method: GET
+    use_proxy: no
+    validate_certs: no
+    return_content: no
+    headers:
+      X-Auth-Token: "{{ TOKEN }}"
+  register: disks_wwn_out2
+  until: disks_wwn_out2.json.volume.health_status.health_value == "OK"
+  retries: 40
+  delay: 3
+  no_log: True
