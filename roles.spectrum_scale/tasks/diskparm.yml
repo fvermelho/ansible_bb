@@ -26,11 +26,78 @@
     - disks
   no_log: True
 
-#CHANGE DISK PARAMETERS #OLHAR
-- name: diskparm | change disk(s) parameter on AIX server(s)
-  shell: /opt/gpfs/sshgpfs {{ item[0] }} "if [ \$(uname) == AIX ];then chdev -l \$(lspv | grep {{ item[1].pvid }} | awk '{print \$1}') -a algorithm=shortest_queue -a reserve_policy=no_reserve -a timeout_policy=fail_path -a queue_depth=32 -a pv=yes -a rw_timeout=30 -a hcheck_interval=60 -a max_transfer=0x1000000 -a max_coalesce=0x1000000;fi"
+#CHANGE DISK PARAMETERS
+- name: diskparm | change disk(s) parameter RESERVE POLICY on AIX server(s)
+  shell: /opt/gpfs/sshgpfs {{ item[0] }} "if [ \$(uname) == AIX ];then chdev -l \$(lspv | grep {{ item[1].pvid }} | awk '{print \$1}') -a reserve_policy=no_reserve;fi"
   with_nested:
     - "{{ cluster_servers.stdout_lines }}"
     - "{{ scale_storage_aix }}"
   ignore_errors: yes
   no_log: True
+  
+- name: diskparm | change disk(s) parameter ALGORITHM on AIX server(s)
+  shell: /opt/gpfs/sshgpfs {{ item[0] }} "if [ \$(uname) == AIX ];then chdev -l \$(lspv | grep {{ item[1].pvid }} | awk '{print \$1}') -a algorithm=shortest_queue;fi"
+  with_nested:
+    - "{{ cluster_servers.stdout_lines }}"
+    - "{{ scale_storage_aix }}"
+  ignore_errors: yes
+  no_log: True  
+  
+- name: diskparm | change disk(s) parameter TIMEOUT POLICY on AIX server(s)
+  shell: /opt/gpfs/sshgpfs {{ item[0] }} "if [ \$(uname) == AIX ];then chdev -l \$(lspv | grep {{ item[1].pvid }} | awk '{print \$1}') -a timeout_policy=fail_path;fi"
+  with_nested:
+    - "{{ cluster_servers.stdout_lines }}"
+    - "{{ scale_storage_aix }}"
+  ignore_errors: yes
+  no_log: True
+
+- name: diskparm | change disk(s) parameter QUEUE DEPTH on AIX server(s)
+  shell: /opt/gpfs/sshgpfs {{ item[0] }} "if [ \$(uname) == AIX ];then chdev -l \$(lspv | grep {{ item[1].pvid }} | awk '{print \$1}') -a queue_depth=32;fi"
+  with_nested:
+    - "{{ cluster_servers.stdout_lines }}"
+    - "{{ scale_storage_aix }}"
+  ignore_errors: yes
+  no_log: True
+  
+- name: diskparm | change disk(s) parameter HCHECK INTERVAL on AIX server(s)
+  shell: /opt/gpfs/sshgpfs {{ item[0] }} "if [ \$(uname) == AIX ];then chdev -l \$(lspv | grep {{ item[1].pvid }} | awk '{print \$1}') -a hcheck_interval=60;fi"
+  with_nested:
+    - "{{ cluster_servers.stdout_lines }}"
+    - "{{ scale_storage_aix }}"
+  ignore_errors: yes
+  no_log: True
+  
+- name: diskparm | change disk(s) parameter MAX TRANSFER on AIX server(s)
+  shell: /opt/gpfs/sshgpfs {{ item[0] }} "if [ \$(uname) == AIX ];then chdev -l \$(lspv | grep {{ item[1].pvid }} | awk '{print \$1}') -a max_transfer=0x1000000;fi"
+  with_nested:
+    - "{{ cluster_servers.stdout_lines }}"
+    - "{{ scale_storage_aix }}"
+  ignore_errors: yes
+  no_log: True
+  
+- name: diskparm | change disk(s) parameter RW TIMEOUT on AIX server(s)
+  shell: /opt/gpfs/sshgpfs {{ item[0] }} "if [ \$(uname) == AIX ];then chdev -l \$(lspv | grep {{ item[1].pvid }} | awk '{print \$1}') -a rw_timeout=30;fi"
+  with_nested:
+    - "{{ cluster_servers.stdout_lines }}"
+    - "{{ scale_storage_aix }}"
+  ignore_errors: yes
+  no_log: True
+  
+- name: diskparm | change disk(s) parameter MAX COALESCE on AIX server(s)
+  shell: /opt/gpfs/sshgpfs {{ item[0] }} "if [ \$(uname) == AIX ];then chdev -l \$(lspv | grep {{ item[1].pvid }} | awk '{print \$1}') -a max_coalesce=0x1000000;fi"
+  with_nested:
+    - "{{ cluster_servers.stdout_lines }}"
+    - "{{ scale_storage_aix }}"
+  ignore_errors: yes
+  no_log: True
+  
+  
+  # -a algorithm=shortest_queue 
+  # -a reserve_policy=no_reserve 
+  # -a timeout_policy=fail_path
+  # -a queue_depth=32
+  # -a pv=yes
+  # -a rw_timeout=30
+  # -a hcheck_interval=60
+  # -a max_transfer=0x1000000
+  # -a max_coalesce=0x1000000
